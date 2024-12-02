@@ -39,7 +39,7 @@ Follow these steps to set up the project environment:
 1. **Clone the repository:**
     ```bash
     git clone https://github.com/vishwajitsarnobat/Deepfake-SIH-2024.git
-    cd deepfake-source-detection
+    cd Deepfake-SIH-2024
     ```
 
 2. **Set up a virtual environment:**
