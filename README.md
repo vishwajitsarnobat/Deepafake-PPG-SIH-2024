@@ -1,6 +1,3 @@
-Apologies for the confusion earlier! Here's the properly formatted Markdown version of your README file:
-
-```markdown
 # Deepfake-SIH-2024
 
 Official repository for SIH 2024, including code for deepfake detection.
