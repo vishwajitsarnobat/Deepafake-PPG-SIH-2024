@@ -1,0 +1,25 @@
+# Dataset paths
+dataset:
+  root: dataset
+  labels_csv: data/labels.csv
+  frames_dir: data/frames
+  ppg_cells_dir: data/ppg_cells
+
+# Preprocessing parameters
+preprocessing:
+  frame_skip: 10  # Number of frames to skip during face extraction
+
+# Model parameters
+model:
+  num_classes: 2  # Binary classification: real (0) vs fake (1)
+  save_path: results/models/resnet_classifier.pth
+
+# Training parameters
+training:
+  batch_size: 16
+  epochs: 10
+  learning_rate: 0.001
+
+# Evaluation parameters
+evaluation:
+  batch_size: 16
