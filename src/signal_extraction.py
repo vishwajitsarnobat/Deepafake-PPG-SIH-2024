@@ -17,21 +17,34 @@ def extract_ppg_signals(face_images):
         signals.append(chrom_signal)
     return np.array(signals)
 
-def create_ppg_cells(ppg_signals, window_size=64):
-
+def create_ppg_cells(ppg_signals, window_size=64, max_cells=10):
+    """
+    Create PPG cells by combining raw signals and their PSD.
+    Normalize the number of cells to ensure consistency.
+    :param ppg_signals: Raw PPG signals.
+    :param window_size: Number of frames per window.
+    :param max_cells: Maximum number of PPG cells to generate per video.
+    :return: List of PPG cells with fixed size.
+    """
     cells = []
 
     for i in range(0, len(ppg_signals) - window_size, window_size):
-        window = ppg_signals[i:i + window_size] # window of signals
-        _, psd = welch(window, nperseg=len(window)) # Power Spectral Density
+        window = ppg_signals[i:i + window_size]
+        _, psd = welch(window, nperseg=len(window))
 
         # Ensure PSD has the same size as the window
-        # 0s are added to the end of psd if needed
         if len(psd) < window_size:
-            psd = np.pad(psd, (0, window_size - len(psd)), mode="constant") # padding at the end
-    
-        cell = np.vstack([window, psd]) # shape (2x64), vstack merges lists as rows of larger list
+            psd = np.pad(psd, (0, window_size - len(psd)), mode="constant")
+
+        cell = np.vstack([window, psd])
         cells.append(cell)
+
+    # Normalize the number of cells
+    if len(cells) > max_cells:
+        cells = cells[:max_cells]  # Trim to max_cells
+    elif len(cells) < max_cells:
+        padding = np.zeros((max_cells - len(cells), 2, window_size))
+        cells = np.vstack([cells, padding])  # Pad with zero-filled cells
 
     return np.array(cells)
 

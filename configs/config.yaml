@@ -7,9 +7,9 @@ dataset:
 
 # Preprocessing parameters
 preprocessing:
-  frame_skip: 1  # Number of frames to skip during face extraction
+  frame_skip: 2  # Reduce the number of frames extracted to speed up preprocessing
   start_index: 0  # Starting index for video range
-  end_index: 100
+  end_index: 500  # Process 500 videos for training and testing
 
 # Model parameters
 model:
@@ -18,11 +18,11 @@ model:
 
 # Training parameters
 training:
-  batch_size: 16
-  epochs: 10
-  learning_rate: 0.001
-  split_ratio: 0.6
+  batch_size: 8  # Smaller batch size for better GPU utilization on small datasets
+  epochs: 50  # Lower epochs to balance training time with accuracy
+  learning_rate: 0.00001  # A slightly higher learning rate to speed up convergence
+  split_ratio: 0.85  # Use 85% for training and 15% for testing
 
 # Evaluation parameters
 evaluation:
-  batch_size: 16
+  batch_size: 8  # Match training batch size for consistency
