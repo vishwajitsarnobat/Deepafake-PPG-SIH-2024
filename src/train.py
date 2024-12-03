@@ -17,17 +17,14 @@ def train_model():
     end_index = config["preprocessing"].get("end_index", None)
     split_ratio = config["training"].get("split_ratio", 0.8)
     
-    # Create dataset with specified range and split ratio
     train_dataset = PPGCellDataset(
         csv_file=config["dataset"]["labels_csv"],
         cell_dir=config["dataset"]["ppg_cells_dir"],
         start_index=start_index,
         end_index=end_index,
-        split_ratio=split_ratio,
         is_train=True
     )
     
-    # Custom collate function to filter out None samples
     def collate_fn(batch):
         batch = [item for item in batch if item is not None]
         return torch.utils.data.dataloader.default_collate(batch)
@@ -41,6 +38,7 @@ def train_model():
     
     # Initialize model
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print('\n', device, "is used \n")
     model = ResNetClassifier(num_classes=config["model"]["num_classes"]).to(device)
     
     # Optimizer and loss function
