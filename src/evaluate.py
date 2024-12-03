@@ -12,7 +12,7 @@ import numpy as np
 import yaml
 import matplotlib.pyplot as plt
 import seaborn as sns
-import os
+
 from dataset import PPGCellDataset
 from model import ResNetClassifier
 
@@ -54,7 +54,7 @@ def evaluate_model():
     # Load model
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = ResNetClassifier(num_classes=config["model"]["num_classes"])
-    model.load_state_dict(torch.load(config["model"]["save_path"], map_location=device, weights_only=True))
+    model.load_state_dict(torch.load(config["model"]["save_path"], map_location=device))
     model.to(device)
     model.eval()
     

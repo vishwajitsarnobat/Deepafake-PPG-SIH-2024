@@ -9,14 +9,10 @@ import numpy as np
 import yaml
 
 def train_model():
-    """
-    Train the ResNet-50 model on PPG cells.
-    """
-    # Load configuration
+
     with open("configs/config.yaml", "r") as f:
         config = yaml.safe_load(f)
     
-    # Get training parameters from config
     start_index = config["preprocessing"].get("start_index", 0)
     end_index = config["preprocessing"].get("end_index", None)
     split_ratio = config["training"].get("split_ratio", 0.8)

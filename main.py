@@ -12,9 +12,9 @@ def run_pipeline():
 
     os.makedirs("results/models", exist_ok=True)
 
-    # run_command("python3 src/create_labels.py", "Creating labels")
+    run_command("python3 src/create_labels.py", "Creating labels")
 
-    # run_command("python3 src/preprocess_videos.py", "Preprocessing videos")
+    run_command("python3 src/preprocess_videos.py", "Preprocessing videos")
 
     run_command("python3 src/signal_extraction.py", "Extracting PPG signals")
 
