@@ -7,7 +7,9 @@ dataset:
 
 # Preprocessing parameters
 preprocessing:
-  frame_skip: 10  # Number of frames to skip during face extraction
+  frame_skip: 1  # Number of frames to skip during face extraction
+  start_index: 0  # Starting index for video range
+  end_index: 10 
 
 # Model parameters
 model:
@@ -19,6 +21,7 @@ training:
   batch_size: 16
   epochs: 10
   learning_rate: 0.001
+  split_ratio: 0.8
 
 # Evaluation parameters
 evaluation:

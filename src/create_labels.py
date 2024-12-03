@@ -12,7 +12,7 @@ def create_labels(dataset_path, output_csv):
     else:
         # os.walk() will traverse the entire directory structure, including subfolders, 
         # hence doesn't matter if there are more folders within the folder
-        for root, _, files in os.walk(original_path): # a tuple (root, dirs, files) is created with os.walk
+        for root, _, files in os.walk(original_path):  # a tuple (root, dirs, files) is created with os.walk
             for file in files:
                 if file.endswith(('.mp4', '.avi')):
                     video_path = os.path.join(root, file)
@@ -31,6 +31,8 @@ def create_labels(dataset_path, output_csv):
 
     if data:
         df = pd.DataFrame(data)
+        # Shuffle the DataFrame rows before saving
+        df = df.sample(frac=1, random_state=42).reset_index(drop=True)
         df.to_csv(output_csv, index=False)
         print(f"Labels saved to {output_csv}")
     else:
