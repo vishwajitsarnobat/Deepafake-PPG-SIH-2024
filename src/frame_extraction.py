@@ -49,6 +49,11 @@ def preprocess_videos(input_csv, output_dir, frame_skip, start_index=None, end_i
         video_name = os.path.splitext(os.path.basename(video_path))[0]
         
         face_output_dir = os.path.join(output_dir, label, video_name)
+        
+        if os.path.exists(face_output_dir) and os.listdir(face_output_dir):
+            print(f"Skipping {video_path} as frames already exist in {face_output_dir}")
+            continue
+        
         extract_faces(video_path, face_output_dir, detector, frame_skip)
 
 def main():

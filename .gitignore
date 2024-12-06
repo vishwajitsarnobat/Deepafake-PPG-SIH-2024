@@ -5,3 +5,5 @@ __pycache__/
 /results/
 /models/
 /tf/
+/deepfake_dataset/
+/facial-landmarks-recognition-master/

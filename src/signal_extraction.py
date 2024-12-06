@@ -55,6 +55,11 @@ class PPGCellExtractor:
             for video_folder in os.listdir(label_path):
                 video_path = os.path.join(label_path, video_folder)
                 
+                output_file = os.path.join(output_folder, f"{label_folder}_{video_folder}_ppg_cells.npy")
+                if os.path.exists(output_file):
+                    print(f"Skipping {video_path}, PPG cells already exist: {output_file}")
+                    continue
+                
                 frame_files = sorted([
                     os.path.join(video_path, f) 
                     for f in os.listdir(video_path) 
@@ -74,10 +79,7 @@ class PPGCellExtractor:
                     ppg_cells.append(ppg_cell)
                 
                 if ppg_cells:
-                    np.save(
-                        os.path.join(output_folder, f"{label_folder}_{video_folder}_ppg_cells.npy"), 
-                        np.array(ppg_cells)
-                    )
+                    np.save(output_file, np.array(ppg_cells))
 
 def main():
     with open("configs/config.yaml", "r") as f:

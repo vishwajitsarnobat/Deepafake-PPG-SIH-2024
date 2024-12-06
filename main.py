@@ -12,13 +12,13 @@ def run_pipeline():
 
     os.makedirs("results/models", exist_ok=True)
 
-    # run_command("python3 src/create_labels.py", "Creating labels")
+    run_command("python3 src/create_labels.py", "Creating labels")
 
-    # run_command("python3 src/frame_extraction.py", "Preprocessing videos")
+    run_command("python3 src/frame_extraction.py", "Preprocessing videos")
 
-    # run_command("python3 src/signal_extraction.py", "Extracting PPG signals")
+    run_command("python3 src/signal_extraction.py", "Extracting PPG signals")
 
-    # run_command("python3 src/train.py", "Training the model")
+    run_command("python3 src/train.py", "Training the model")
 
     run_command("python3 src/test.py", "Evaluating the model")
 

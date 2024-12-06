@@ -30,8 +30,17 @@ class PPGCellTrainer:
 
     def preprocess_data(self, X, y):
         print(f"Input X shape: {X.shape}")
-        
         X = X.reshape(-1, 64, 64, 1) / 255.0
+        
+        datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+            rotation_range=20,
+            width_shift_range=0.2,
+            height_shift_range=0.2,
+            horizontal_flip=True,
+            zoom_range=0.2,
+            shear_range=0.2,
+            fill_mode='nearest'
+        )
         
         le = LabelEncoder()
         y = le.fit_transform(y)
@@ -44,22 +53,35 @@ class PPGCellTrainer:
         return X_train, X_test, y_train, y_test
 
     def create_model(self):
-        base_model = VGG19(
-            weights=None, 
-            include_top=False, 
-            input_shape=(64, 64, 1)  
-        )
+        inputs = tf.keras.Input(shape=(64, 64, 1))
         
-        x = base_model.output
-        x = GlobalAveragePooling2D()(x)
-        x = Dense(1024, activation='relu')(x)
-        x = Dropout(0.5)(x)
-        predictions = Dense(
+        x = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', padding='same')(inputs)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+        
+        x = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+        
+        x = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
+        
+        x = tf.keras.layers.Flatten()(x)
+        
+        x = tf.keras.layers.Dense(256, activation='relu')(x)
+        x = tf.keras.layers.Dropout(0.5)(x)
+        
+        x = tf.keras.layers.Dense(128, activation='relu')(x)
+        x = tf.keras.layers.Dropout(0.4)(x)
+        
+        outputs = tf.keras.layers.Dense(
             self.num_classes, 
-            activation='softmax'
+            activation='softmax', 
+            kernel_regularizer=tf.keras.regularizers.l2(0.001)
         )(x)
         
-        model = Model(inputs=base_model.input, outputs=predictions)
+        model = tf.keras.Model(inputs=inputs, outputs=outputs)
         
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
@@ -70,16 +92,26 @@ class PPGCellTrainer:
         return model
 
     def train(self, X_train, X_test, y_train, y_test):
+        datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+            rotation_range=20,
+            width_shift_range=0.2,
+            height_shift_range=0.2,
+            horizontal_flip=True,
+            zoom_range=0.2,
+            shear_range=0.2,
+            fill_mode='nearest'
+        )
+
         self.model = self.create_model()
         
         early_stopping = tf.keras.callbacks.EarlyStopping(
-            monitor='val_loss', 
-            patience=10, 
+            monitor='val_loss',
+            patience=10,
             restore_best_weights=True
         )
-        
-        self.history = self.model.fit(
-            X_train, y_train,
+
+        history = self.model.fit(
+            datagen.flow(X_train, y_train, batch_size=32),
             validation_data=(X_test, y_test),
             epochs=100,
             batch_size=32,
