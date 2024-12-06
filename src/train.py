@@ -2,45 +2,45 @@ import os
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from tensorflow.keras.applications import VGG19
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
-from tensorflow.keras.models import Model
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import yaml
 
-class PPGCellTrainer:
+class DataLoader:
+    @staticmethod
+    def select_and_load_videos(labels_path, ppg_cells_folder, start_index=None, end_index=None):
+        labels_df = pd.read_csv(labels_path)
+        
+        if start_index is not None or end_index is not None:
+            labels_df = labels_df.iloc[start_index:end_index]
+        
+        X_all = []
+        y_all = []
+        
+        for _, row in labels_df.iterrows():
+            video_name = row['path']
+            label = row.get('label', 0)
+            
+            filename = f"{label}_{video_name}_ppg_cells.npy"
+            file_path = os.path.join(ppg_cells_folder, filename)
+            
+            if os.path.exists(file_path):
+                ppg_cells = np.load(file_path)
+                X_all.extend(ppg_cells)
+                y_all.extend([label] * len(ppg_cells))
+        
+        return np.array(X_all), np.array(y_all)
+
+class DeepfakeModelTrainer:
     def __init__(self, num_classes=2):
         self.num_classes = num_classes
         self.model = None
-        self.history = None
-
-    def load_ppg_cells(self, ppg_cells_folder):
-        X = []
-        video_labels = []
-
-        for filename in os.listdir(ppg_cells_folder):
-            if filename.endswith('_ppg_cells.npy'):
-                label = int(filename.split('_')[0])
-                ppg_cells = np.load(os.path.join(ppg_cells_folder, filename))
-                X.extend(ppg_cells)
-                video_labels.extend([label] * len(ppg_cells))
-
-        return np.array(X), np.array(video_labels)
 
     def preprocess_data(self, X, y):
-        print(f"Input X shape: {X.shape}")
-        X = X.reshape(-1, 64, 64, 1) / 255.0
+        if len(X) == 0:
+            raise ValueError("No data loaded. Check your data loading process.")
         
-        datagen = tf.keras.preprocessing.image.ImageDataGenerator(
-            rotation_range=20,
-            width_shift_range=0.2,
-            height_shift_range=0.2,
-            horizontal_flip=True,
-            zoom_range=0.2,
-            shear_range=0.2,
-            fill_mode='nearest'
-        )
+        X = X.reshape(-1, 64, 64, 1) / 255.0
         
         le = LabelEncoder()
         y = le.fit_transform(y)
@@ -123,7 +123,6 @@ class PPGCellTrainer:
     def save_model(self, save_path):
         if self.model:
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            
             self.model.save(save_path)
             print(f"Model saved to {save_path}")
         else:
@@ -134,17 +133,38 @@ def main():
         config = yaml.safe_load(f)
     
     ppg_cells_folder = config["dataset"]["ppg_cells_dir"]
+    labels_path = config["dataset"]["labels_csv"]
     save_path = config["model"]["save_path"]
     num_classes = config["model"].get("num_classes", 2)
+    start_index = config.get("preprocessing", {}).get("start_index")
+    end_index = config.get("preprocessing", {}).get("end_index")
     
-    trainer = PPGCellTrainer(num_classes=num_classes)
+    print("Loading data...")
+    X, y = DataLoader.select_and_load_videos(
+        labels_path, 
+        ppg_cells_folder, 
+        start_index, 
+        end_index
+    )
     
-    X, y = trainer.load_ppg_cells(ppg_cells_folder)
+    print(f"Loaded {len(X)} samples")
+    if len(X) == 0:
+        raise ValueError("No data loaded. Check your data paths and CSV file.")
+    
+    trainer = DeepfakeModelTrainer(num_classes=num_classes)
+    
+    print("Preprocessing data...")
     X_train, X_test, y_train, y_test = trainer.preprocess_data(X, y)
     
+    print("Training model...")
     model = trainer.train(X_train, X_test, y_train, y_test)
     
+    print("Saving model...")
     trainer.save_model(save_path)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"Error in Training the model: {e}")
+        raise

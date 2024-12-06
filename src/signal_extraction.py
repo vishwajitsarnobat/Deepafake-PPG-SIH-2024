@@ -32,54 +32,59 @@ class PPGCellExtractor:
         psd_signals = np.zeros_like(ppg_signals)
         for i in range(32):
             freqs, psd = scipy.signal.welch(ppg_signals[i], nperseg=self.window_size)
-            
             if len(psd) > self.window_size:
                 psd = psd[:self.window_size]
             elif len(psd) < self.window_size:
                 psd = np.pad(psd, (0, self.window_size - len(psd)), mode='constant')
-            
             psd_signals[i] = psd
         
         ppg_cell = np.vstack((ppg_signals, psd_signals))
         return ppg_cell
     
-    def extract_signals_from_folder(self, frames_folder, output_folder):
+    def extract_signals_from_folder(self, frames_folder, output_folder, labels_path, start_index=None, end_index=None):
         os.makedirs(output_folder, exist_ok=True)
         
-        for label_folder in os.listdir(frames_folder):
-            label_path = os.path.join(frames_folder, label_folder)
-            
-            if not os.path.isdir(label_path):
-                continue
-            
-            for video_folder in os.listdir(label_path):
-                video_path = os.path.join(label_path, video_folder)
-                
-                output_file = os.path.join(output_folder, f"{label_folder}_{video_folder}_ppg_cells.npy")
-                if os.path.exists(output_file):
-                    print(f"Skipping {video_path}, PPG cells already exist: {output_file}")
+        labels_df = pd.read_csv(labels_path)
+        
+        video_names = labels_df['path'].tolist()
+        if start_index is not None or end_index is not None:
+            video_names = video_names[start_index:end_index]
+        
+        for video_name in video_names:
+            for label_folder in os.listdir(frames_folder):
+                label_path = os.path.join(frames_folder, label_folder)
+                if not os.path.isdir(label_path):
                     continue
                 
-                frame_files = sorted([
-                    os.path.join(video_path, f) 
-                    for f in os.listdir(video_path) 
-                    if f.endswith(('.jpg', '.png', '.jpeg'))
-                ])
-                
-                if not frame_files:
-                    print(f"No frames found in {video_path}")
-                    continue
-                
-                frames = [cv2.imread(f) for f in frame_files]
-                ppg_cells = []
-                
-                for i in range(0, len(frames) - self.window_size + 1, self.window_size):
-                    window_frames = frames[i:i+self.window_size]
-                    ppg_cell = self.create_ppg_cell(window_frames)
-                    ppg_cells.append(ppg_cell)
-                
-                if ppg_cells:
-                    np.save(output_file, np.array(ppg_cells))
+                video_path = os.path.join(label_path, video_name)
+                if os.path.exists(video_path):
+                    output_file = os.path.join(output_folder, f"{label_folder}_{video_name}_ppg_cells.npy")
+                    
+                    if os.path.exists(output_file):
+                        print(f"Skipping {video_path}, PPG cells already exist: {output_file}")
+                        continue
+                    
+                    frame_files = sorted([
+                        os.path.join(video_path, f)
+                        for f in os.listdir(video_path)
+                        if f.endswith(('.jpg', '.png', '.jpeg'))
+                    ])
+                    
+                    if not frame_files:
+                        print(f"No frames found in {video_path}")
+                        continue
+                    
+                    frames = [cv2.imread(f) for f in frame_files]
+                    ppg_cells = []
+                    
+                    for i in range(0, len(frames) - self.window_size + 1, self.window_size):
+                        window_frames = frames[i:i+self.window_size]
+                        ppg_cell = self.create_ppg_cell(window_frames)
+                        ppg_cells.append(ppg_cell)
+                    
+                    if ppg_cells:
+                        np.save(output_file, np.array(ppg_cells))
+                    break  # Stop searching once video is found
 
 def main():
     with open("configs/config.yaml", "r") as f:
@@ -87,12 +92,21 @@ def main():
     
     frames_folder = config["dataset"]["frames_dir"]
     output_folder = config["dataset"]["ppg_cells_dir"]
+    labels_path = config["dataset"]["labels_csv"]
     window_size = config.get("preprocessing", {}).get("window_size", 64)
+    start_index = config.get("preprocessing", {}).get("start_index")
+    end_index = config.get("preprocessing", {}).get("end_index")
     
     os.makedirs(output_folder, exist_ok=True)
     
     extractor = PPGCellExtractor(window_size=window_size)
-    extractor.extract_signals_from_folder(frames_folder, output_folder)
+    extractor.extract_signals_from_folder(
+        frames_folder, 
+        output_folder, 
+        labels_path,
+        start_index=start_index, 
+        end_index=end_index
+    )
 
 if __name__ == "__main__":
     main()

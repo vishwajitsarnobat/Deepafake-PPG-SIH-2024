@@ -1,119 +1,78 @@
-import os
 import numpy as np
 import tensorflow as tf
 import pandas as pd
+import os
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import yaml
-from sklearn.metrics import (
-    classification_report, 
-    confusion_matrix, 
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score
-)
 
-class PPGCellTester:
-    def __init__(self, model_path, num_classes=2):
+class DataLoader:
+    @staticmethod
+    def select_and_load_videos(labels_path, ppg_cells_folder, start_index=None, end_index=None):
+        labels_df = pd.read_csv(labels_path)
+        
+        if start_index is not None or end_index is not None:
+            labels_df = labels_df.iloc[start_index:end_index]
+        
+        X_all = []
+        y_all = []
+        
+        for _, row in labels_df.iterrows():
+            video_name = row['path']
+            label = row.get('label', 0)
+            
+            filename = f"{label}_{video_name}_ppg_cells.npy"
+            file_path = os.path.join(ppg_cells_folder, filename)
+            
+            if os.path.exists(file_path):
+                ppg_cells = np.load(file_path)
+                X_all.extend(ppg_cells)
+                y_all.extend([label] * len(ppg_cells))
+        
+        return np.array(X_all), np.array(y_all)
+
+class DeepfakeModelTester:
+    def __init__(self, model_path):
         self.model = tf.keras.models.load_model(model_path)
-        self.num_classes = num_classes
-
-    def load_test_data(self, ppg_cells_folder):
-        X = []
-        video_labels = []
-
-        for filename in os.listdir(ppg_cells_folder):
-            if filename.endswith('_ppg_cells.npy'):
-                label = int(filename.split('_')[0])
-                ppg_cells = np.load(os.path.join(ppg_cells_folder, filename))
-                
-                print(f"Loading {filename}, shape: {ppg_cells.shape}")
-                
-                X.extend(ppg_cells)
-                video_labels.extend([label] * len(ppg_cells))
-
-        X = np.array(X)
-        print(f"Total X shape before reshape: {X.shape}")
-        
-        X = X.reshape(-1, 64, 64, 1) / 255.0
-        y = np.array(video_labels)
-
-        return X, y
-
-    def aggregate_predictions(self, cell_predictions):
-        if len(cell_predictions.shape) > 1 and cell_predictions.shape[1] > 1:
-            return cell_predictions
-        
-        probabilities = cell_predictions if cell_predictions.max() <= 1 else tf.nn.softmax(cell_predictions)
-        
-        video_prediction = np.mean(probabilities, axis=0)
-        
-        return video_prediction.reshape(1, -1)
 
     def predict(self, X):
-        print(f"Input X shape: {X.shape}")
-        
-        cell_predictions = self.model.predict(X)
-        
-        print(f"Cell predictions shape: {cell_predictions.shape}")
-        
-        video_prediction = self.aggregate_predictions(cell_predictions)
-        
-        print(f"Video prediction shape: {video_prediction.shape}")
-        
-        return np.argmax(video_prediction, axis=1)
+        return self.model.predict(X)
 
     def evaluate(self, X, y):
-        y_pred = self.predict(X)
+        predictions = self.predict(X)
+        y_pred = np.argmax(predictions, axis=1)
         
         metrics = {
             'accuracy': accuracy_score(y, y_pred),
-            'precision': precision_score(y, y_pred, average='weighted'),
-            'recall': recall_score(y, y_pred, average='weighted'),
-            'f1_score': f1_score(y, y_pred, average='weighted'),
             'classification_report': classification_report(y, y_pred),
             'confusion_matrix': confusion_matrix(y, y_pred)
         }
-        
         return metrics
 
-    def generate_detailed_report(self, metrics):
-        report = "Deep Fake Detection Model Evaluation Report\n"
-        report += "=" * 50 + "\n\n"
-        
-        report += f"Overall Accuracy: {metrics['accuracy']:.2%}\n"
-        report += f"Precision: {metrics['precision']:.2%}\n"
-        report += f"Recall: {metrics['recall']:.2%}\n"
-        report += f"F1 Score: {metrics['f1_score']:.2%}\n\n"
-        
-        report += "Classification Report:\n"
-        report += metrics['classification_report'] + "\n\n"
-        
-        report += "Confusion Matrix:\n"
-        report += str(metrics['confusion_matrix']) + "\n"
-        
-        return report
-
-def main():
-    with open("configs/config.yaml", "r") as f:
-        config = yaml.safe_load(f)
+def test_model(model_path, test_data_folder, labels_path):
+    tester = DeepfakeModelTester(model_path)
     
-    model_path = config["model"]["save_path"]
-    ppg_cells_folder = config["dataset"]["ppg_cells_dir"]
-    report_path = config["results"]["report_path"]
-    num_classes = config["model"].get("num_classes", 2)
+    X_test, y_test = DataLoader.select_and_load_videos(
+        labels_path, 
+        test_data_folder
+    )
     
-    tester = PPGCellTester(model_path, num_classes=num_classes)
-    
-    X_test, y_test = tester.load_test_data(ppg_cells_folder)
+    X_test = X_test.reshape(-1, 64, 64, 1) / 255.0
     
     metrics = tester.evaluate(X_test, y_test)
     
-    report = tester.generate_detailed_report(metrics)
-    print(report)
-    
-    os.makedirs(os.path.dirname(report_path), exist_ok=True)
-    with open(report_path, 'w') as f:
-        f.write(report)
+    print("Model Evaluation Metrics:")
+    print(f"Accuracy: {metrics['accuracy']}")
+    print("\nClassification Report:")
+    print(metrics['classification_report'])
+    print("\nConfusion Matrix:")
+    print(metrics['confusion_matrix'])
 
 if __name__ == "__main__":
-    main()
+    with open("configs/config.yaml", "r") as f:
+        config = yaml.safe_load(f)
+
+    model_path = config["model"]["save_path"]
+    test_data_folder = config["dataset"]["test_ppg_cells_dir"]
+    labels_path = config["dataset"]["labels_csv"]
+
+    test_model(model_path, test_data_folder, labels_path)
