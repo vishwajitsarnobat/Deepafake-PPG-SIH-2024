@@ -1,107 +1,96 @@
 import os
 import numpy as np
-import pandas as pd
-from scipy.signal import welch
 import cv2
+import scipy.signal
 import yaml
+import pandas as pd
 
-def extract_ppg_signals(face_images):
-    # here u and v will have lesser elements than actual number of pixels
-    # as the chrominance is downsampled
-    signals = [] # will contain single value per frame
-    for img_file in face_images:
-        img = cv2.imread(img_file)
-        yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV) # space separates the luminance (Y) from the chrominance components (U and V)
-        u, v = yuv[:, :, 1], yuv[:, :, 2] #  extracts the U and V channels (height, width, attribute)
-        chrom_signal = np.mean(u) - np.mean(v) # need to change this as taking mean might not be the best
-        signals.append(chrom_signal)
-    return np.array(signals)
-
-def create_ppg_cells(ppg_signals, window_size=64, max_cells=10):
-    """
-    Create PPG cells by combining raw signals and their PSD.
-    Normalize the number of cells to ensure consistency.
-    :param ppg_signals: Raw PPG signals.
-    :param window_size: Number of frames per window.
-    :param max_cells: Maximum number of PPG cells to generate per video.
-    :return: List of PPG cells with fixed size.
-    """
-    cells = []
-
-    for i in range(0, len(ppg_signals) - window_size, window_size):
-        window = ppg_signals[i:i + window_size]
-        _, psd = welch(window, nperseg=len(window))
-
-        # Ensure PSD has the same size as the window
-        if len(psd) < window_size:
-            psd = np.pad(psd, (0, window_size - len(psd)), mode="constant")
-
-        cell = np.vstack([window, psd])
-        cells.append(cell)
-
-    # Normalize the number of cells
-    if len(cells) > max_cells:
-        cells = cells[:max_cells]  # Trim to max_cells
-    elif len(cells) < max_cells:
-        padding = np.zeros((max_cells - len(cells), 2, window_size))
-        cells = np.vstack([cells, padding])  # Pad with zero-filled cells
-
-    return np.array(cells)
-
-def process_videos_and_save(input_csv, frames_dir, ppg_cells_dir, start_index=None, end_index=None):
-
-    data = pd.read_csv(input_csv)
-
-    if start_index is not None or end_index is not None:
-        data = data.iloc[start_index:end_index]
-
-    os.makedirs(ppg_cells_dir, exist_ok=True)
+class PPGCellExtractor:
+    def __init__(self, window_size=64):
+        self.window_size = window_size
     
-    for _, row in data.iterrows():
-        video_label = row["label"]
-        video_name = os.path.splitext(os.path.basename(row["path"]))[0]
+    def compute_chrom_ppg(self, roi):
+        ycrcb = cv2.cvtColor(roi, cv2.COLOR_BGR2YCrCb)
+        mask = cv2.inRange(ycrcb, (0, 133, 77), (255, 173, 127))
+        green_mean = cv2.mean(roi[:, :, 1], mask=mask)[0]
+        return green_mean
+    
+    def create_ppg_cell(self, frames):
+        frames = [cv2.resize(frame, (256, 256)) for frame in frames]
+        ppg_signals = np.zeros((32, self.window_size))
         
-        face_images_dir = os.path.join(frames_dir, str(video_label), video_name)
-        print(f"Searching for frames in: {face_images_dir}")
-        
-        if not os.path.exists(face_images_dir):
-            print(f"ERROR: Frame directory not found: {face_images_dir}")
-            continue
-        
-        face_images = [
-            os.path.join(face_images_dir, f) 
-            for f in os.listdir(face_images_dir) 
-            if f.endswith((".jpg", ".png", ".jpeg"))
-        ]
-        
-        if not face_images:
-            print(f"ERROR: No image frames found in {face_images_dir}")
-            continue
-        
-        try:
-            ppg_signals = extract_ppg_signals(face_images)
-            ppg_cells = create_ppg_cells(ppg_signals)
+        for i in range(32):
+            start_x = (i % 8) * (frames[0].shape[1] // 8)
+            start_y = (i // 8) * (frames[0].shape[0] // 8)
+            end_x = start_x + (frames[0].shape[1] // 8)
+            end_y = start_y + (frames[0].shape[0] // 8)
             
-            if len(ppg_cells) == 0:
-                print(f"WARNING: No PPG cells created for {video_name}")
+            for j, frame in enumerate(frames[:self.window_size]):
+                region = frame[start_y:end_y, start_x:end_x]
+                ppg_signals[i, j] = self.compute_chrom_ppg(region)
+        
+        psd_signals = np.zeros_like(ppg_signals)
+        for i in range(32):
+            freqs, psd = scipy.signal.welch(ppg_signals[i], nperseg=self.window_size)
+            
+            if len(psd) > self.window_size:
+                psd = psd[:self.window_size]
+            elif len(psd) < self.window_size:
+                psd = np.pad(psd, (0, self.window_size - len(psd)), mode='constant')
+            
+            psd_signals[i] = psd
+        
+        ppg_cell = np.vstack((ppg_signals, psd_signals))
+        return ppg_cell
+    
+    def extract_signals_from_folder(self, frames_folder, output_folder):
+        os.makedirs(output_folder, exist_ok=True)
+        
+        for label_folder in os.listdir(frames_folder):
+            label_path = os.path.join(frames_folder, label_folder)
+            
+            if not os.path.isdir(label_path):
                 continue
             
-            output_file = os.path.join(ppg_cells_dir, f"{video_name}_ppg.npy")
-            np.save(output_file, ppg_cells)
-            print(f"PPG cells saved to {output_file}")
-        
-        except Exception as e:
-            print(f"Error processing {video_name}: {e}")
-            continue
+            for video_folder in os.listdir(label_path):
+                video_path = os.path.join(label_path, video_folder)
+                
+                frame_files = sorted([
+                    os.path.join(video_path, f) 
+                    for f in os.listdir(video_path) 
+                    if f.endswith(('.jpg', '.png', '.jpeg'))
+                ])
+                
+                if not frame_files:
+                    print(f"No frames found in {video_path}")
+                    continue
+                
+                frames = [cv2.imread(f) for f in frame_files]
+                ppg_cells = []
+                
+                for i in range(0, len(frames) - self.window_size + 1, self.window_size):
+                    window_frames = frames[i:i+self.window_size]
+                    ppg_cell = self.create_ppg_cell(window_frames)
+                    ppg_cells.append(ppg_cell)
+                
+                if ppg_cells:
+                    np.save(
+                        os.path.join(output_folder, f"{label_folder}_{video_folder}_ppg_cells.npy"), 
+                        np.array(ppg_cells)
+                    )
 
-if __name__ == "__main__":
+def main():
     with open("configs/config.yaml", "r") as f:
         config = yaml.safe_load(f)
+    
+    frames_folder = config["dataset"]["frames_dir"]
+    output_folder = config["dataset"]["ppg_cells_dir"]
+    window_size = config.get("preprocessing", {}).get("window_size", 64)
+    
+    os.makedirs(output_folder, exist_ok=True)
+    
+    extractor = PPGCellExtractor(window_size=window_size)
+    extractor.extract_signals_from_folder(frames_folder, output_folder)
 
-    input_csv = config["dataset"]["labels_csv"]
-    frames_dir = config["dataset"]["frames_dir"]
-    ppg_cells_dir = config["dataset"]["ppg_cells_dir"]
-    start_index = config["preprocessing"]["start_index"]
-    end_index = config["preprocessing"]["end_index"]
-
-    process_videos_and_save(input_csv, frames_dir, ppg_cells_dir, start_index=start_index, end_index=end_index)
+if __name__ == "__main__":
+    main()

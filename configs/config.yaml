@@ -1,28 +1,23 @@
-# Dataset paths
 dataset:
-  root: dataset
-  labels_csv: data/labels.csv
-  frames_dir: data/frames
-  ppg_cells_dir: data/ppg_cells
+  # Paths for dataset-related files and directories
+  original_dir: "dataset/original_sequences"
+  manipulated_dir: "dataset/manipulated_sequences"
+  labels_csv: "data/labels.csv"
+  frames_dir: "data/frames"
+  ppg_cells_dir: "data/ppg_cells"
 
-# Preprocessing parameters
 preprocessing:
-  frame_skip: 2  # Reduce the number of frames extracted to speed up preprocessing
-  start_index: 0  # Starting index for video range
-  end_index: 500  # Process 500 videos for training and testing
+  # Frame extraction and signal processing parameters
+  frame_skip: 10  # Extract a frame every 10 frames
+  window_size: 64  # Size of sliding window for PPG extraction
+  start_index: 0  # Optional: start index for subset processing
+  end_index: 500   # Optional: end index for subset processing
 
-# Model parameters
 model:
-  num_classes: 2  # Binary classification: real (0) vs fake (1)
-  save_path: results/models/resnet_classifier.pth
+  # Model training and saving parameters
+  num_classes: 2  # Binary classification (real vs fake)
+  save_path: "models/deepfake_detector.h5"
 
-# Training parameters
-training:
-  batch_size: 8  # Smaller batch size for better GPU utilization on small datasets
-  epochs: 50  # Lower epochs to balance training time with accuracy
-  learning_rate: 0.00001  # A slightly higher learning rate to speed up convergence
-  split_ratio: 0.85  # Use 85% for training and 15% for testing
-
-# Evaluation parameters
-evaluation:
-  batch_size: 8  # Match training batch size for consistency
+results:
+  # Reporting and evaluation parameters
+  report_path: "results/model_evaluation_report.txt"

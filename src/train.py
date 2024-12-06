@@ -1,82 +1,118 @@
 import os
-import torch
-from torch.utils.data import DataLoader
-import torch.nn as nn
-import torch.optim as optim
-from dataset import PPGCellDataset
-from model import ResNetClassifier
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from tensorflow.keras.applications import VGG19
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
+from tensorflow.keras.models import Model
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 import yaml
 
-def train_model():
-    """
-    Train the ResNet-50 model on PPG cells.
-    """
+class PPGCellTrainer:
+    def __init__(self, num_classes=2):
+        self.num_classes = num_classes
+        self.model = None
+        self.history = None
+
+    def load_ppg_cells(self, ppg_cells_folder):
+        X = []
+        video_labels = []
+
+        for filename in os.listdir(ppg_cells_folder):
+            if filename.endswith('_ppg_cells.npy'):
+                label = int(filename.split('_')[0])
+                ppg_cells = np.load(os.path.join(ppg_cells_folder, filename))
+                X.extend(ppg_cells)
+                video_labels.extend([label] * len(ppg_cells))
+
+        return np.array(X), np.array(video_labels)
+
+    def preprocess_data(self, X, y):
+        print(f"Input X shape: {X.shape}")
+        
+        X = X.reshape(-1, 64, 64, 1) / 255.0
+        
+        le = LabelEncoder()
+        y = le.fit_transform(y)
+        y = tf.keras.utils.to_categorical(y, num_classes=self.num_classes)
+        
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+        
+        return X_train, X_test, y_train, y_test
+
+    def create_model(self):
+        base_model = VGG19(
+            weights=None, 
+            include_top=False, 
+            input_shape=(64, 64, 1)  
+        )
+        
+        x = base_model.output
+        x = GlobalAveragePooling2D()(x)
+        x = Dense(1024, activation='relu')(x)
+        x = Dropout(0.5)(x)
+        predictions = Dense(
+            self.num_classes, 
+            activation='softmax'
+        )(x)
+        
+        model = Model(inputs=base_model.input, outputs=predictions)
+        
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
+            loss='categorical_crossentropy',
+            metrics=['accuracy']
+        )
+        
+        return model
+
+    def train(self, X_train, X_test, y_train, y_test):
+        self.model = self.create_model()
+        
+        early_stopping = tf.keras.callbacks.EarlyStopping(
+            monitor='val_loss', 
+            patience=10, 
+            restore_best_weights=True
+        )
+        
+        self.history = self.model.fit(
+            X_train, y_train,
+            validation_data=(X_test, y_test),
+            epochs=100,
+            batch_size=32,
+            callbacks=[early_stopping]
+        )
+        
+        return self.model
+
+    def save_model(self, save_path):
+        if self.model:
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            
+            self.model.save(save_path)
+            print(f"Model saved to {save_path}")
+        else:
+            print("No model to save. Train the model first.")
+
+def main():
     with open("configs/config.yaml", "r") as f:
         config = yaml.safe_load(f)
-
-    # Load dataset
-    train_dataset = PPGCellDataset(
-        csv_file=config["dataset"]["labels_csv"],
-        cell_dir=config["dataset"]["ppg_cells_dir"],
-        start_index=config["preprocessing"].get("start_index", 0),
-        end_index=config["preprocessing"].get("end_index", None),
-        is_train=True
-    )
-
-    # Custom collate function to skip None samples
-    def collate_fn(batch):
-        batch = [item for item in batch if item is not None]
-        return torch.utils.data.dataloader.default_collate(batch)
-
-    train_loader = DataLoader(
-        train_dataset, 
-        batch_size=config["training"]["batch_size"], 
-        shuffle=True,
-        collate_fn=collate_fn
-    )
-
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f"\nUsing {device} for training\n")
-    model = ResNetClassifier(num_classes=config["model"]["num_classes"]).to(device)
-
-    # Optimizer and loss function
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=config["training"]["learning_rate"])
-
-    # Training loop
-    for epoch in range(config["training"]["epochs"]):
-        model.train()
-        total_loss = 0
-        batch_count = 0
-
-        for inputs, labels in train_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-
-            # Flatten the 10-channel input and convert it to single-channel (1, 64, 64)
-            inputs = inputs.view(inputs.size(0), -1, inputs.size(3))  # [batch_size, 64, 64]
-            inputs = inputs.unsqueeze(1)  # Add channel dimension -> [batch_size, 1, 64, 64]
-
-            # Expand single-channel input to 3 channels for ResNet
-            inputs = inputs.repeat(1, 3, 1, 1)  # [batch_size, 3, 64, 64]
-
-            # Forward pass
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-
-            # Backward pass and optimization
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            total_loss += loss.item()
-            batch_count += 1
-
-        print(f"Epoch {epoch + 1}/{config['training']['epochs']}, Loss: {total_loss / batch_count:.4f}")
-
-    # Save the trained model
-    os.makedirs(os.path.dirname(config["model"]["save_path"]), exist_ok=True)
-    torch.save(model.state_dict(), config["model"]["save_path"])
-    print(f"Model saved to {config['model']['save_path']}")
+    
+    ppg_cells_folder = config["dataset"]["ppg_cells_dir"]
+    save_path = config["model"]["save_path"]
+    num_classes = config["model"].get("num_classes", 2)
+    
+    trainer = PPGCellTrainer(num_classes=num_classes)
+    
+    X, y = trainer.load_ppg_cells(ppg_cells_folder)
+    X_train, X_test, y_train, y_test = trainer.preprocess_data(X, y)
+    
+    model = trainer.train(X_train, X_test, y_train, y_test)
+    
+    trainer.save_model(save_path)
 
 if __name__ == "__main__":
-    train_model()
+    main()
