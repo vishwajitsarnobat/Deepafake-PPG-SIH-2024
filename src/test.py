@@ -6,10 +6,6 @@ import yaml
 import scipy.signal
 import torch.nn as nn
 import matplotlib.pyplot as plt
-from flask import Flask, request, jsonify
-from werkzeug.utils import secure_filename
-import base64
-import io
 
 class PPGCellExtractor:
     def __init__(self, window_size=64, low_freq=0.5, high_freq=3.0, sampling_rate=30):
@@ -151,9 +147,13 @@ def extract_frames(video_path, max_frames=1000):
     cap.release()
     return frames
 
-def plot_signals_to_base64(ppg_signals, title="PPG Signals"):
+def plot_signals(ppg_signals, title="PPG Signals"):
     """
-    Plot PPG signals and return as base64 encoded image
+    Plot PPG signals.
+    
+    Parameters:
+        ppg_signals (numpy.ndarray): 2D array where each row is a signal.
+        title (str): Title for the plot.
     """
     num_signals = ppg_signals.shape[0]
     plt.figure(figsize=(15, 10))
@@ -166,15 +166,7 @@ def plot_signals_to_base64(ppg_signals, title="PPG Signals"):
     plt.ylabel("Amplitude")
     plt.legend(loc="upper right", fontsize="small")
     plt.grid(True)
-    
-    # Save plot to a bytes buffer
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close()
-    buf.seek(0)
-    
-    # Encode the image to base64
-    return base64.b64encode(buf.getvalue()).decode('utf-8')
+    plt.show()
 
 def validate_video(video_path, model_path, config_path):
     """
@@ -213,11 +205,11 @@ def validate_video(video_path, model_path, config_path):
     # Convert to tensor
     ppg_cells = torch.FloatTensor(np.array(ppg_cells))
 
-    # Prepare plots of signals
+    # Visualize signals for the first window
     raw_signals = ppg_cells[0, :32].numpy()  # First half: raw signals
     filtered_signals = ppg_cells[0, 32:].numpy()  # Second half: filtered signals
-    raw_signals_plot = plot_signals_to_base64(raw_signals, title="Raw PPG Signals")
-    filtered_signals_plot = plot_signals_to_base64(filtered_signals, title="Filtered PPG Signals")
+    plot_signals(raw_signals, title="Raw PPG Signals")
+    plot_signals(filtered_signals, title="Filtered PPG Signals")
     
     # Load model
     model = DeepfakeCNNClassifier().to(device)
@@ -237,74 +229,37 @@ def validate_video(video_path, model_path, config_path):
         fake_prob = avg_pred[1].item()
         
         class_pred = torch.argmax(avg_pred).item()
+        
+    # Print detailed results
+    print(f"\n{'='*30}")
+    print(f"Video Analysis Results:")
+    print(f"{'='*30}")
+    print(f"Video Path: {video_path}")
+    print(f"Predicted Class: {'Deepfake' if class_pred == 1 else 'Real'}")
+    print(f"Confidence (Real): {real_prob*100:.2f}%")
+    print(f"Confidence (Fake): {fake_prob*100:.2f}%")
     
     return {
         'prediction': 'Deepfake' if class_pred == 1 else 'Real',
         'real_confidence': real_prob,
-        'fake_confidence': fake_prob,
-        'raw_signals_plot': raw_signals_plot,
-        'filtered_signals_plot': filtered_signals_plot,
-        'raw_signals': raw_signals.tolist(),
-        'filtered_signals': filtered_signals.tolist()
+        'fake_confidence': fake_prob
     }
 
-# Flask Application
-app = Flask(__name__)
+def main():
+    # Example usageome/raj_99/Projects/SIH/plshojabc
+    video_path = "/home/vishwajit/Workspace/Deepfake-SIH-2024/dataset/sih_videos/0014_real.mp4"
+    
+    # Use default paths from configuration if not specified differently
+    with open("configs/config.yaml", "r") as f:
+        config = yaml.safe_load(f)
+    
+    model_path = config["model"]["save_path"]
+    config_path = "configs/config.yaml"
+    
+    result = validate_video(video_path, model_path, config_path)
+    
+    if result:
+        print("\nDetection complete.")
 
-# Ensure a directory for uploads exists
-UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-@app.route('/detect_deepfake', methods=['POST'])
-def detect_deepfake():
-    # Check if video is present in the request
-    if 'video' not in request.files:
-        return jsonify({'error': 'No video file uploaded'}), 400
-    
-    video_file = request.files['video']
-    
-    # Check if filename is empty
-    if video_file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    
-    # Secure the filename and save the file
-    filename = secure_filename(video_file.filename)
-    video_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    video_file.save(video_path)
-    
-    try:
-        # Use default paths from configuration
-        with open("configs/config.yaml", "r") as f:
-            config = yaml.safe_load(f)
-        
-        model_path = config["model"]["save_path"]
-        config_path = "configs/config.yaml"
-        
-        # Validate the video
-        result = validate_video(video_path, model_path, config_path)
-        
-        # Remove the uploaded video
-        os.remove(video_path)
-        
-        if result:
-            # Return exactly: PPG signals, result, confidence levels
-            return jsonify([
-                result['raw_signals'].tolist() if hasattr(result['raw_signals'], 'tolist') else result['raw_signals'],
-                result['prediction'],
-                {
-                    'real_confidence': round(result['real_confidence'], 4),
-                    'fake_confidence': round(result['fake_confidence'], 4)
-                }
-            ])
-        else:
-            return jsonify({'error': 'Could not process the video'}), 500
-    
-    except Exception as e:
-        # Remove the uploaded video in case of any error
-        if os.path.exists(video_path):
-            os.remove(video_path)
-        return jsonify({'error': str(e)}), 500
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    main()

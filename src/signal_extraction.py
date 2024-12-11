@@ -47,7 +47,7 @@ class PPGCellExtractor:
         high = self.high_freq / nyquist
         
         b, a = scipy.signal.butter(
-            N=4,
+            N=6,
             Wn=[low, high], 
             btype='band'
         )
