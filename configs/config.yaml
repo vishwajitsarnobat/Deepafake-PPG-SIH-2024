@@ -6,13 +6,14 @@ dataset:
   ppg_cells_dir: "data/ppg_cells"
 
 preprocessing:
-  frame_skip: 1
+  frame_skip: 3
   window_size: 64
   start_index: 0
   end_index: 500
+  sampling_rate: 30
 
 model:
-  save_path: "models/model.pth"
+  save_path: "/home/vishwajit/Workspace/Deepfake-SIH-2024/models/model.pth"
 
 results:
   report_path: "results/model_evaluation_report.txt"
