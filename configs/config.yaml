@@ -1,5 +1,4 @@
 dataset:
-  # Paths for dataset-related files and directories
   original_dir: "dataset/original_sequences"
   manipulated_dir: "dataset/manipulated_sequences"
   labels_csv: "data/labels.csv"
@@ -7,17 +6,13 @@ dataset:
   ppg_cells_dir: "data/ppg_cells"
 
 preprocessing:
-  # Frame extraction and signal processing parameters
-  frame_skip: 10  # Extract a frame every 10 frames
-  window_size: 64  # Size of sliding window for PPG extraction
-  start_index: 0  # Optional: start index for subset processing
-  end_index: 500   # Optional: end index for subset processing
+  frame_skip: 1
+  window_size: 64
+  start_index: 0
+  end_index: 500
 
 model:
-  # Model training and saving parameters
-  num_classes: 2  # Binary classification (real vs fake)
-  save_path: "models/deepfake_detector.h5"
+  save_path: "models/model.pth"
 
 results:
-  # Reporting and evaluation parameters
   report_path: "results/model_evaluation_report.txt"

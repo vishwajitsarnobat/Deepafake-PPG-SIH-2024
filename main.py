@@ -20,7 +20,5 @@ def run_pipeline():
 
     run_command("python3 src/train.py", "Training the model")
 
-    run_command("python3 src/test.py", "Evaluating the model")
-
 if __name__ == "__main__":
     run_pipeline()

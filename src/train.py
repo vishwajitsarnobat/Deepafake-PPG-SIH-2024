@@ -1,170 +1,245 @@
 import os
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
 import yaml
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-class DataLoader:
-    @staticmethod
-    def select_and_load_videos(labels_path, ppg_cells_folder, start_index=None, end_index=None):
-        labels_df = pd.read_csv(labels_path)
-        
+class PPGCellDataset(Dataset):
+    def __init__(self, ppg_folder, labels_path, save_path, start_index=None, end_index=None):
+        self.ppg_cells = []
+        self.labels = []
+        self.save_path = save_path
+
+        labels_data = pd.read_csv(labels_path)
+
         if start_index is not None or end_index is not None:
-            labels_df = labels_df.iloc[start_index:end_index]
-        
-        X_all = []
-        y_all = []
-        
-        for _, row in labels_df.iterrows():
-            video_name = row['path']
-            label = row.get('label', 0)
-            
-            filename = f"{label}_{video_name}_ppg_cells.npy"
-            file_path = os.path.join(ppg_cells_folder, filename)
-            
-            if os.path.exists(file_path):
-                ppg_cells = np.load(file_path)
-                X_all.extend(ppg_cells)
-                y_all.extend([label] * len(ppg_cells))
-        
-        return np.array(X_all), np.array(y_all)
+            labels_data = labels_data.iloc[start_index:end_index]
 
-class DeepfakeModelTrainer:
-    def __init__(self, num_classes=2):
-        self.num_classes = num_classes
-        self.model = None
+        video_names = list(zip(labels_data["path"], labels_data["label"]))
 
-    def preprocess_data(self, X, y):
-        if len(X) == 0:
-            raise ValueError("No data loaded. Check your data loading process.")
-        
-        X = X.reshape(-1, 64, 64, 1) / 255.0
-        
-        le = LabelEncoder()
-        y = le.fit_transform(y)
-        y = tf.keras.utils.to_categorical(y, num_classes=self.num_classes)
-        
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
-        
-        return X_train, X_test, y_train, y_test
+        for video_name in video_names:
+            base_name = os.path.splitext(os.path.basename(video_name[0]))[0]
+            label = video_name[1]
 
-    def create_model(self):
-        inputs = tf.keras.Input(shape=(64, 64, 1))
-        
-        x = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', padding='same')(inputs)
-        x = tf.keras.layers.BatchNormalization()(x)
-        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
-        
-        x = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
-        
-        x = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-        x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(x)
-        
-        x = tf.keras.layers.Flatten()(x)
-        
-        x = tf.keras.layers.Dense(256, activation='relu')(x)
-        x = tf.keras.layers.Dropout(0.5)(x)
-        
-        x = tf.keras.layers.Dense(128, activation='relu')(x)
-        x = tf.keras.layers.Dropout(0.4)(x)
-        
-        outputs = tf.keras.layers.Dense(
-            self.num_classes, 
-            activation='softmax', 
-            kernel_regularizer=tf.keras.regularizers.l2(0.001)
-        )(x)
-        
-        model = tf.keras.Model(inputs=inputs, outputs=outputs)
-        
-        model.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
-            loss='categorical_crossentropy',
-            metrics=['accuracy']
-        )
-        
-        return model
+            ppg_file = os.path.join(ppg_folder, f"{label}_{base_name}_ppg_cells.npy")
 
-    def train(self, X_train, X_test, y_train, y_test):
-        datagen = tf.keras.preprocessing.image.ImageDataGenerator(
-            rotation_range=20,
-            width_shift_range=0.2,
-            height_shift_range=0.2,
-            horizontal_flip=True,
-            zoom_range=0.2,
-            shear_range=0.2,
-            fill_mode='nearest'
+            if os.path.exists(ppg_file):
+                ppg_cells = np.load(ppg_file)
+
+                for ppg_cell in ppg_cells:
+                    self.ppg_cells.append(ppg_cell)
+                    self.labels.append(label)
+
+        self.ppg_cells = torch.FloatTensor(np.array(self.ppg_cells))
+        self.labels = torch.LongTensor(np.array(self.labels))
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        return self.ppg_cells[idx], self.labels[idx]
+
+class DeepfakeCNNClassifier(nn.Module):
+    def __init__(self, input_channels=64, num_classes=2):
+        super(DeepfakeCNNClassifier, self).__init__()
+
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
-        self.model = self.create_model()
-        
-        early_stopping = tf.keras.callbacks.EarlyStopping(
-            monitor='val_loss',
-            patience=10,
-            restore_best_weights=True
+        self.classifier = nn.Sequential(
+            nn.Linear(128 * 8 * 8, 256),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(256, num_classes)
         )
 
-        history = self.model.fit(
-            datagen.flow(X_train, y_train, batch_size=32),
-            validation_data=(X_test, y_test),
-            epochs=100,
-            batch_size=32,
-            callbacks=[early_stopping]
-        )
-        
-        return self.model
+    def forward(self, x):
+        x = x.unsqueeze(1)
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
 
-    def save_model(self, save_path):
-        if self.model:
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            self.model.save(save_path)
-            print(f"Model saved to {save_path}")
-        else:
-            print("No model to save. Train the model first.")
+def plot_confusion_matrix(y_true, y_pred, class_names):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.title('Confusion Matrix')
+    plt.show()
+
+def train_model(model, train_loader, val_loader, criterion, optimizer, save_path, num_epochs, device):
+    best_val_accuracy = 0
+
+    for epoch in range(num_epochs):
+        model.train()
+        train_loss = 0
+        train_correct = 0
+        train_total = 0
+
+        for ppg_cells, labels in train_loader:
+            ppg_cells, labels = ppg_cells.to(device), labels.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(ppg_cells)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
+            _, predicted = torch.max(outputs.data, 1)
+            train_total += labels.size(0)
+            train_correct += (predicted == labels).sum().item()
+
+        model.eval()
+        val_correct = 0
+        val_total = 0
+        val_loss = 0
+        val_predictions = []
+        val_true_labels = []
+
+        with torch.no_grad():
+            for ppg_cells, labels in val_loader:
+                ppg_cells, labels = ppg_cells.to(device), labels.to(device)
+
+                outputs = model(ppg_cells)
+                loss = criterion(outputs, labels)
+                val_loss += loss.item()
+
+                _, predicted = torch.max(outputs.data, 1)
+                val_total += labels.size(0)
+                val_correct += (predicted == labels).sum().item()
+
+                val_predictions.extend(predicted.cpu().numpy())
+                val_true_labels.extend(labels.cpu().numpy())
+
+        train_accuracy = 100 * train_correct / train_total
+        val_accuracy = 100 * val_correct / val_total
+
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            val_true_labels, val_predictions, average='binary'
+        )
+
+        print(f'Epoch [{epoch+1}/{num_epochs}]')
+        print(f'Train Loss: {train_loss/len(train_loader):.4f}, Train Accuracy: {train_accuracy:.2f}%')
+        print(f'Val Loss: {val_loss/len(val_loader):.4f}, Val Accuracy: {val_accuracy:.2f}%')
+        print(f'Precision: {precision:.4f}, Recall: {recall:.4f}, F1-score: {f1:.4f}')
+
+        if val_accuracy > best_val_accuracy:
+            best_val_accuracy = val_accuracy
+            torch.save(model.state_dict(), save_path)
+
+    return model
 
 def main():
     with open("configs/config.yaml", "r") as f:
         config = yaml.safe_load(f)
-    
-    ppg_cells_folder = config["dataset"]["ppg_cells_dir"]
+
+    ppg_folder = config["dataset"]["ppg_cells_dir"]
     labels_path = config["dataset"]["labels_csv"]
+    start_index = config["preprocessing"]["start_index"]
+    end_index = config["preprocessing"]["end_index"]
     save_path = config["model"]["save_path"]
-    num_classes = config["model"].get("num_classes", 2)
-    start_index = config.get("preprocessing", {}).get("start_index")
-    end_index = config.get("preprocessing", {}).get("end_index")
-    
-    print("Loading data...")
-    X, y = DataLoader.select_and_load_videos(
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    dataset = PPGCellDataset(
+        ppg_folder, 
         labels_path, 
-        ppg_cells_folder, 
+        save_path,
         start_index, 
         end_index
     )
-    
-    print(f"Loaded {len(X)} samples")
-    if len(X) == 0:
-        raise ValueError("No data loaded. Check your data paths and CSV file.")
-    
-    trainer = DeepfakeModelTrainer(num_classes=num_classes)
-    
-    print("Preprocessing data...")
-    X_train, X_test, y_train, y_test = trainer.preprocess_data(X, y)
-    
-    print("Training model...")
-    model = trainer.train(X_train, X_test, y_train, y_test)
-    
-    print("Saving model...")
-    trainer.save_model(save_path)
+
+    train_indices, test_indices = train_test_split(
+        range(len(dataset)), 
+        test_size=0.2, 
+        stratify=dataset.labels.numpy(),
+        random_state=42
+    )
+
+    train_dataset = torch.utils.data.Subset(dataset, train_indices)
+    test_dataset = torch.utils.data.Subset(dataset, test_indices)
+
+    train_dataset, val_dataset = train_test_split(
+        train_dataset, 
+        test_size=0.2, 
+        stratify=[dataset.labels[i] for i in train_indices],
+        random_state=42
+    )
+
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+    model = DeepfakeCNNClassifier().to(device)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+    model = train_model(
+        model, 
+        train_loader, 
+        val_loader, 
+        criterion, 
+        optimizer, 
+        save_path,
+        num_epochs=50, 
+        device=device
+    )
+
+    model.load_state_dict(torch.load(save_path))
+    model.eval()
+
+    test_predictions = []
+    test_true_labels = []
+    test_correct = 0
+    test_total = 0
+
+    with torch.no_grad():
+        for ppg_cells, labels in test_loader:
+            ppg_cells, labels = ppg_cells.to(device), labels.to(device)
+
+            outputs = model(ppg_cells)
+            _, predicted = torch.max(outputs.data, 1)
+
+            test_total += labels.size(0)
+            test_correct += (predicted == labels).sum().item()
+
+            test_predictions.extend(predicted.cpu().numpy())
+            test_true_labels.extend(labels.cpu().numpy())
+
+    test_accuracy = 100 * test_correct / test_total
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        test_true_labels, test_predictions, average='binary'
+    )
+
+    print("\nTest Results:")
+    print(f'Test Accuracy: {test_accuracy:.2f}%')
+    print(f'Precision: {precision:.4f}')
+    print(f'Recall: {recall:.4f}')
+    print(f'F1-score: {f1:.4f}')
+
+    plot_confusion_matrix(test_true_labels, test_predictions, class_names=['Real', 'Deepfake'])
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"Error in Training the model: {e}")
-        raise
+    main()
