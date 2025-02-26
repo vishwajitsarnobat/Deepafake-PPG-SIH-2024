@@ -1,4 +1,3 @@
-```markdown
 # Deepfake Detection Using Physiological Methods  
 *PPG Signal Extraction & PSD Analysis*
 
