@@ -18,10 +18,6 @@ Deepfake videos are becoming increasingly realistic, making it harder to differe
   - [Deepfake Classification](#deepfake-classification)
 - [Advantages](#advantages)
 - [Challenges & Limitations](#challenges--limitations)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [License](#license)
 - [Acknowledgements](#acknowledgements)
 
 ## Key Concepts
@@ -75,50 +71,6 @@ PSD analysis measures the frequency content of a signal:
 - **Environmental Variability**: Variations in ambient lighting and subject movement can introduce noise.
 - **Evolving Techniques**: As deepfake generation methods improve, they may eventually simulate physiological signals more convincingly.
 
-## Installation
-
-1. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/yourusername/deepfake-ppg-detection.git
-   cd deepfake-ppg-detection
-   ```
-
-2. **Set Up a Virtual Environment:**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-   ```
-
-3. **Install Dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Usage
-
-### Running Detection
-
-To analyze a video for deepfake detection:
-```bash
-python detect.py --video path/to/your/video.mp4
-```
-
-### Running Tests
-
-To run the test suite and evaluate the system:
-```bash
-python test.py
-```
-
-## Contributing
-
-Contributions are welcome! Please fork the repository and submit pull requests. Ensure your code follows the established style guidelines and includes appropriate tests.
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
 ## Acknowledgements
 
-- **Research Inspiration**: This work is inspired by recent studies in multimedia forensics and deepfake detection.
-- **Open Source Community**: Thanks to the developers of PyTorch, OpenCV, and other open-source tools that facilitated this project.
+- **Research Inspiration**: This work is inspired by research paper by Intel on deepfake detection.
